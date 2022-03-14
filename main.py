@@ -27,14 +27,14 @@ def main(cfg):
     torch.backends.cudnn.benchmark = False
 
     if cfg.action =='train':
-        save_path = os.path.join(cfg.model_path, cfg.dataset, f'TE{cfg.arch}_{str(cfg.exp_num)}')
+        save_path = os.path.join(cfg.model_path, '_'.join(cfg.dataset), f'TE{cfg.arch}_{str(cfg.exp_num)}')
 
         # Create model directory
         os.makedirs(save_path, exist_ok=True)
         Trainer(cfg, save_path)
 
     else:
-        save_path = os.path.join(cfg.model_path, cfg.dataset, f'TE{cfg.arch}_{str(cfg.exp_num)}')
+        save_path = os.path.join(cfg.model_path, '_'.join(cfg.dataset), f'TE{cfg.arch}_{str(cfg.exp_num)}')
 
         datasets = ['DUTS', 'DUT-O', 'HKU-IS', 'ECSSD', 'PASCAL-S']
         for dataset in datasets:

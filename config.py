@@ -1,10 +1,13 @@
 import argparse
+import ast
+
 
 def getConfig():
     parser = argparse.ArgumentParser()
     parser.add_argument('action', type=str, default='train', help='Model Training or Testing options')
     parser.add_argument('--exp_num', default=0, type=str, help='experiment_number')
-    parser.add_argument('--dataset', type=str, default='DUTS', help='DUTS')
+    parser.add_argument('--dataset', type=str, action='append', help='appendable list of datasets')
+    parser.add_argument('--validation-dataset', type=str ,action='append', help='appendable list of datasets')
     parser.add_argument('--data_path', type=str, default='data/')
 
     # Model parameter settings
@@ -30,11 +33,12 @@ def getConfig():
     parser.add_argument('--patience', type=int, default=5, help="Scheduler ReduceLROnPlateau's parameter & Early Stopping(+5)")
     parser.add_argument('--model_path', type=str, default='results/')
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--save_map', type=bool, default=None, help='Save prediction map')
+    parser.add_argument('--save_map', type=ast.literal_eval, default=None, help='Save prediction map')
 
 
     # Hardware settings
-    parser.add_argument('--multi_gpu', type=bool, default=True)
+    parser.add_argument('--multi_gpu', type=ast.literal_eval, default=True)
+    parser.add_argument('--gpu', type=ast.literal_eval, default=True)
     parser.add_argument('--num_workers', type=int, default=4)
     cfg = parser.parse_args()
 

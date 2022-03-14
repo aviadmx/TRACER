@@ -19,22 +19,42 @@ from model.TRACER import TRACER
 class Trainer():
     def __init__(self, args, save_path):
         super(Trainer, self).__init__()
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        use_gpu = torch.cuda.is_available() and args.gpu
+        self.device = torch.device('cuda' if use_gpu else 'cpu')
         self.size = args.img_size
 
-        self.tr_img_folder = os.path.join(args.data_path, args.dataset, 'Train/images/')
-        self.tr_gt_folder = os.path.join(args.data_path, args.dataset, 'Train/masks/')
-        self.tr_edge_folder = os.path.join(args.data_path, args.dataset, 'Train/edges/')
+        train_datasets = {}
+        for dataset in args.dataset:
+            train_datasets[dataset] = (
+                os.path.join(args.data_path, dataset, 'Train/images/'),
+                os.path.join(args.data_path, dataset, 'Train/masks/'),
+                os.path.join(args.data_path, dataset, 'Train/edges/')
+            )
 
         self.train_transform = get_train_augmentation(img_size=args.img_size, ver=args.aug_ver)
         self.test_transform = get_test_augmentation(img_size=args.img_size)
 
-        self.train_loader = get_loader(self.tr_img_folder, self.tr_gt_folder, self.tr_edge_folder, phase='train',
+        split_train = True
+        if args.validation_dataset:
+            print('Not splitting train, using train and val datasets as they are...')
+            split_train = False
+            val_datasets = {}
+            for dataset in args.validation_dataset:
+                val_datasets[dataset] = (
+                    os.path.join(args.data_path, dataset, 'Test/images/'),
+                    os.path.join(args.data_path, dataset, 'Test/masks/'),
+                    os.path.join(args.data_path, dataset, 'Test/edges/')
+                )
+        else:
+            print('Generating val by splitting train...')
+            val_datasets = train_datasets
+
+        self.train_loader = get_loader(train_datasets, phase='train',
                                        batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers,
-                                       transform=self.train_transform, seed=args.seed)
-        self.val_loader = get_loader(self.tr_img_folder, self.tr_gt_folder, self.tr_edge_folder, phase='val',
-                                     batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers,
-                                     transform=self.test_transform, seed=args.seed)
+                                       transform=self.train_transform, seed=args.seed, split=split_train)
+        self.val_loader = get_loader(val_datasets, phase='val',
+                                         batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers,
+                                         transform=self.test_transform, seed=args.seed, split=split_train)
 
         # Network
         self.model = TRACER(args).to(self.device)
@@ -81,7 +101,7 @@ class Trainer():
         # Test time
         datasets = ['DUTS', 'DUT-O', 'HKU-IS', 'ECSSD', 'PASCAL-S']
         for dataset in datasets:
-            args.dataset = dataset
+            args.dataset = [dataset]
             test_loss, test_mae, test_maxf, test_avgf, test_s_m = self.test(args, os.path.join(save_path))
 
             print(
@@ -162,9 +182,13 @@ class Trainer():
         self.model.load_state_dict(torch.load(path))
         print('###### pre-trained Model restored #####')
 
-        te_img_folder = os.path.join(args.data_path, args.dataset, 'Test/images/')
-        te_gt_folder = os.path.join(args.data_path, args.dataset, 'Test/masks/')
-        test_loader = get_loader(te_img_folder, te_gt_folder, edge_folder=None, phase='test',
+        datasets = {}
+        for dataset in args.dataset:
+            datasets[dataset] = (
+                os.path.join(args.data_path, dataset, 'Test/images/'),
+                os.path.join(args.data_path, dataset, 'Test/masks/')
+            )
+        test_loader = get_loader(datasets, phase='test',
                                  batch_size=args.batch_size, shuffle=False,
                                  num_workers=args.num_workers, transform=self.test_transform)
 
@@ -175,7 +199,7 @@ class Trainer():
         test_avgf = AvgMeter()
         test_s_m = AvgMeter()
 
-        Eval_tool = Evaluation_metrics(args.dataset, self.device)
+        Eval_tool = Evaluation_metrics('_'.join(args.dataset), self.device)
 
         with torch.no_grad():
             for i, (images, masks, original_size, image_name) in enumerate(tqdm(test_loader)):
@@ -231,14 +255,18 @@ class Tester():
 
         self.criterion = Criterion(args)
 
-        te_img_folder = os.path.join(args.data_path, args.dataset, 'Test/images/')
-        te_gt_folder = os.path.join(args.data_path, args.dataset, 'Test/masks/')
-        self.test_loader = get_loader(te_img_folder, te_gt_folder, edge_folder=None, phase='test',
+        datasets = {}
+        for dataset in args.dataset:
+            datasets[dataset] = (
+                os.path.join(args.data_path, args.dataset, 'Test/images/'),
+                os.path.join(args.data_path, args.dataset, 'Test/masks/')
+            )
+        self.test_loader = get_loader(datasets, phase='test',
                                       batch_size=args.batch_size, shuffle=False,
                                       num_workers=args.num_workers, transform=self.test_transform)
 
         if args.save_map is not None:
-            os.makedirs(os.path.join('pred_map', 'exp'+str(self.args.exp_num), self.args.dataset), exist_ok=True)
+            os.makedirs(os.path.join('pred_map', 'exp'+str(self.args.exp_num), '_'.join(self.args.dataset)), exist_ok=True)
 
     def test(self):
         self.model.eval()
@@ -249,7 +277,7 @@ class Tester():
         test_s_m = AvgMeter()
         t = time.time()
 
-        Eval_tool = Evaluation_metrics(self.args.dataset, self.device)
+        Eval_tool = Evaluation_metrics('_'.join(self.args.dataset), self.device)
 
         with torch.no_grad():
             for i, (images, masks, original_size, image_name) in enumerate(tqdm(self.test_loader)):
@@ -271,7 +299,7 @@ class Tester():
                     # Save prediction map
                     if self.args.save_map is not None:
                         output = (output.squeeze().detach().cpu().numpy()*255.0).astype(np.uint8)   # convert uint8 type
-                        cv2.imwrite(os.path.join('pred_map', 'exp'+str(self.args.exp_num), self.args.dataset, image_name[i]+'.png'), output)
+                        cv2.imwrite(os.path.join('pred_map', 'exp'+str(self.args.exp_num), '_'.join(self.args.dataset), image_name[i]+'.png'), output)
 
                     # log
                     test_loss.update(loss.item(), n=1)

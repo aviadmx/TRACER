@@ -5,31 +5,36 @@ import numpy as np
 import albumentations as albu
 from pathlib import Path
 from albumentations.pytorch.transforms import ToTensorV2
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from sklearn.model_selection import train_test_split
+from util.utils import get_files_recursive
 
 
 class DatasetGenerate(Dataset):
-    def __init__(self, img_folder, gt_folder, edge_folder, phase: str = 'train', transform=None, seed=None):
-        self.images = sorted(glob.glob(img_folder + '/*'))
-        self.gts = sorted(glob.glob(gt_folder + '/*'))
-        self.edges = sorted(glob.glob(edge_folder + '/*'))
+    def __init__(self, img_folder, gt_folder, edge_folder, phase: str = 'train', transform=None, seed=None, split=True):
+        self.images = get_files_recursive(img_folder, ext=["jpg", "jpeg", "png", "cr2", "webp", "tiff", 'tif'])
+        self.gts = get_files_recursive(gt_folder, ext=["jpg", "jpeg", "png", "cr2", "webp", "tiff", 'tif'])
+        self.edges = get_files_recursive(edge_folder, ext=["jpg", "jpeg", "png", "cr2", "webp", "tiff", 'tif'])
         self.transform = transform
 
-        train_images, val_images, train_gts, val_gts, train_edges, val_edges = train_test_split(self.images, self.gts,
-                                                                                                self.edges,
-                                                                                                test_size=0.05,
-                                                                                                random_state=seed)
-        if phase == 'train':
-            self.images = train_images
-            self.gts = train_gts
-            self.edges = train_edges
-        elif phase == 'val':
-            self.images = val_images
-            self.gts = val_gts
-            self.edges = val_edges
-        else:  # Testset
-            pass
+        assert len(self.images) == len(self.gts) == len(
+            self.edges), 'Amount of images, GT masks or edge masks is not equal'
+        if split:
+            train_images, val_images, train_gts, val_gts, train_edges, val_edges = train_test_split(self.images,
+                                                                                                    self.gts,
+                                                                                                    self.edges,
+                                                                                                    test_size=0.05,
+                                                                                                    random_state=seed)
+            if phase == 'train':
+                self.images = train_images
+                self.gts = train_gts
+                self.edges = train_edges
+            elif phase == 'val':
+                self.images = val_images
+                self.gts = val_gts
+                self.edges = val_edges
+            else:  # Testset
+                pass
 
     def __getitem__(self, idx):
         image = cv2.imread(self.images[idx])
@@ -75,13 +80,25 @@ class Test_DatasetGenerate(Dataset):
         return len(self.images)
 
 
-def get_loader(img_folder, gt_folder, edge_folder, phase: str, batch_size, shuffle,
-               num_workers, transform, seed=None):
+def get_loader(datasets, phase: str, batch_size, shuffle,
+               num_workers, transform, seed=None, split=True):
     if phase == 'test':
-        dataset = Test_DatasetGenerate(img_folder, gt_folder, transform)
+        dataset_list = []
+        for _, (img_folder, gt_folder) in datasets.iterrows():
+            dataset_list.append(Test_DatasetGenerate(img_folder, gt_folder, transform))
+            if len(datasets) > 1:
+                dataset = ConcatDataset(dataset_list)
+            else:
+                dataset = dataset_list[0]
         data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
     else:
-        dataset = DatasetGenerate(img_folder, gt_folder, edge_folder, phase, transform, seed)
+        dataset_list = []
+        for _, (img_folder, gt_folder, edge_folder) in datasets.items():
+            dataset_list.append(DatasetGenerate(img_folder, gt_folder, edge_folder, phase, transform, seed, split))
+        if len(datasets) > 1:
+            dataset = ConcatDataset(dataset_list)
+        else:
+            dataset = dataset_list[0]
         data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers,
                                  drop_last=True)
 
