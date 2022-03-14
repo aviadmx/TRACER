@@ -7,22 +7,22 @@ import os
 import cv2
 import numpy as np
 from tqdm import tqdm
+import argparse
+from util.utils import get_files_recursive
 
-# Append custom datasets below list
-dataset_list = ['DUTS', 'DUT-O', 'HKU-IS', 'ECSSD', 'PASCAL-S']
 
-
-def edge_generator(dataset):
-    if dataset == 'DUTS':
-        mask_path = os.path.join('data/', dataset, 'Train/masks/')
-    else:
-        mask_path = os.path.join('data/', dataset, 'Test/masks/')
-    save_path = os.path.join('data/', dataset, 'Train/edges/')
+def edge_generator(dataset_masks):
+    parent_dir = os.path.dirname(os.path.normpath(dataset_masks))
+    save_path = os.path.join(parent_dir, 'edges')
     os.makedirs(save_path, exist_ok=True)
-    mask_list = os.listdir(mask_path)
+    mask_list = get_files_recursive(dataset_masks, ext=["jpg", "jpeg", "png", "cr2", "webp", "tiff", 'tif'])
 
-    for i, img_name in tqdm(enumerate(mask_list)):
-        mask = cv2.imread(mask_path + img_name)
+    for i, img_path in tqdm(enumerate(mask_list), total=len(mask_list)):
+        _, img_rel_path = img_path.split(dataset_masks)
+        if img_rel_path.startswith('/'):
+            img_rel_path = img_rel_path[1:]
+
+        mask = cv2.imread(img_path)
         mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
         mask = np.int64(mask > 128)
 
@@ -30,9 +30,15 @@ def edge_generator(dataset):
         tmp_edge = gy * gy + gx * gx
         tmp_edge[tmp_edge != 0] = 1
         bound = np.uint8(tmp_edge * 255)
-        cv2.imwrite(os.path.join(save_path, f'{img_name}'), bound)
+        bound_file_path = os.path.join(save_path, img_rel_path)
+        os.makedirs(os.path.dirname(bound_file_path), exist_ok=True)
+        cv2.imwrite(bound_file_path, bound)
 
 
 if __name__ == '__main__':
-    for dataset in dataset_list:
-        edge_generator(dataset)
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset-masks-path', type=str, action='append', help='dataset masks path')
+    args = parser.parse_args()
+    for dataset_masks in args.dataset_masks_path:
+        print('Generating edges for dataset', dataset_masks)
+        edge_generator(dataset_masks)
