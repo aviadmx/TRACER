@@ -6,8 +6,6 @@ With adjustments and added comments by workingcoder (github username).
 Reimplemented: Min Seok Lee and Wooseok Shin
 """
 
-
-
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -26,6 +24,7 @@ from util.effi_utils import (
 )
 from modules.att_modules import Frequency_Edge_Module
 from config import getConfig
+from torch.utils.checkpoint import checkpoint
 
 cfg = getConfig()
 
@@ -57,6 +56,9 @@ class MBConvBlock(nn.Module):
         super().__init__()
         self._block_args = block_args
         self._bn_mom = 1 - global_params.batch_norm_momentum  # pytorch's difference from tensorflow
+        self.use_gradient_checkpoint = global_params.use_gradient_checkpoint
+        if self.use_gradient_checkpoint:
+            self._bn_mom = self._bn_mom ** 0.5
         self._bn_eps = global_params.batch_norm_epsilon
         self.has_se = (self._block_args.se_ratio is not None) and (0 < self._block_args.se_ratio <= 1)
         self.id_skip = block_args.id_skip  # whether to use skip connection and drop connect
@@ -152,6 +154,7 @@ class EfficientNet(nn.Module):
         assert isinstance(blocks_args, list), 'blocks_args should be a list'
         assert len(blocks_args) > 0, 'block args must be greater than 0'
         self._global_params = global_params
+        self._use_gradient_checkpoint = global_params.use_gradient_checkpoint
         self._blocks_args = blocks_args
         self.block_idx, self.channels = get_model_shape()
         self.Frequency_Edge_Module1 = Frequency_Edge_Module(radius=cfg.frequency_radius,
@@ -227,13 +230,11 @@ class EfficientNet(nn.Module):
 
         return endpoints
 
-
     def initial_conv(self, inputs):
         # Stem
         x = self._swish(self._bn0(self._conv_stem(inputs)))
 
         return x
-
 
     def get_blocks(self, x, H, W):
         # Blocks
@@ -242,7 +243,10 @@ class EfficientNet(nn.Module):
             if drop_connect_rate:
                 drop_connect_rate *= float(idx) / len(self._blocks)  # scale drop connect_rate
 
-            x = block(x, drop_connect_rate=drop_connect_rate)
+            if self._use_gradient_checkpoint:
+                x = checkpoint(block, x, drop_connect_rate)
+            else:
+                x = block(x, drop_connect_rate=drop_connect_rate)
 
             if idx == self.block_idx[0]:
                 x, edge = self.Frequency_Edge_Module1(x)
@@ -256,7 +260,6 @@ class EfficientNet(nn.Module):
                 x4 = x.clone()
 
         return (x1, x2, x3, x4), edge
-
 
     @classmethod
     def from_name(cls, model_name, in_channels=3, **override_params):

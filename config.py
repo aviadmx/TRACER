@@ -31,7 +31,7 @@ def getConfig():
     parser.add_argument('--model_path', type=str, default='results/')
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--save_map', type=bool, default=None, help='Save prediction map')
-
+    parser.add_argument('--gradient_checkpoint', type=bool, default=False)
 
     # Hardware settings
     parser.add_argument('--multi_gpu', type=bool, default=True)
