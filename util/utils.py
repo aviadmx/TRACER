@@ -77,3 +77,10 @@ def get_files_recursive(file_dir, ext=None):
         if os.path.isdir(entry_path):
             files += get_files_recursive(entry_path, ext)
     return files
+
+
+def iou(mask_a, mask_b):
+    intersection_area = (mask_a * mask_b).sum()
+    union_area = mask_a.sum() + mask_b.sum() - intersection_area
+    iou = intersection_area.double() / union_area.double()
+    return iou

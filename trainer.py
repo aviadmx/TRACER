@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 from dataloader import get_train_augmentation, get_test_augmentation, get_loader, gt_to_tensor
-from util.utils import AvgMeter
+from util.utils import AvgMeter, iou
 from util.metrics import Evaluation_metrics
 from util.losses import Optimizer, Scheduler, Criterion
 from model.TRACER import TRACER
@@ -73,8 +73,8 @@ class Trainer():
         t = time.time()
         for epoch in range(1, args.epochs + 1):
             self.epoch = epoch
-            train_loss, train_mae = self.training(args)
-            val_loss, val_mae = self.validate()
+            train_loss, train_mae, train_miou = self.training(args)
+            val_loss, val_mae, val_miou = self.validate()
 
             if args.scheduler == 'Reduce':
                 self.scheduler.step(val_loss)
@@ -86,6 +86,7 @@ class Trainer():
                 early_stopping = 0
                 best_epoch = epoch
                 best_mae = val_mae
+                best_miou = val_miou
                 min_loss = val_loss
                 torch.save(self.model.state_dict(), os.path.join(save_path, 'best_model.pth'))
                 print(f'-----------------SAVE:{best_epoch}epoch----------------')
@@ -96,7 +97,7 @@ class Trainer():
                 break
 
         print(f'\nBest Val Epoch:{best_epoch} | Val Loss:{min_loss:.3f} | Val MAE:{best_mae:.3f} '
-              f'time: {(time.time() - t) / 60:.3f}M')
+              f'| Val IOU:{best_miou:.3f} time: {(time.time() - t) / 60:.3f}M')
 
         # Test time
         datasets = ['DUTS', 'DUT-O', 'HKU-IS', 'ECSSD', 'PASCAL-S']
@@ -115,6 +116,7 @@ class Trainer():
         self.model.train()
         train_loss = AvgMeter()
         train_mae = AvgMeter()
+        train_miou = AvgMeter()
 
         for images, masks, edges in tqdm(self.train_loader):
             images = torch.tensor(images, device=self.device, dtype=torch.float32)
@@ -137,20 +139,23 @@ class Trainer():
 
             # Metric
             mae = torch.mean(torch.abs(outputs - masks))
+            miou = torch.mean(iou(outputs, masks))
 
             # log
             train_loss.update(loss.item(), n=images.size(0))
             train_mae.update(mae.item(), n=images.size(0))
+            train_miou.update(miou.item(), n=images.size(0))
 
         print(f'Epoch:[{self.epoch:03d}/{args.epochs:03d}]')
-        print(f'Train Loss:{train_loss.avg:.3f} | MAE:{train_mae.avg:.3f}')
+        print(f'Train Loss:{train_loss.avg:.3f} | MAE:{train_mae.avg:.3f} | IoU:{train_miou.avg:.3f}')
 
-        return train_loss.avg, train_mae.avg
+        return train_loss.avg, train_mae.avg, train_miou.avg
 
     def validate(self):
         self.model.eval()
         val_loss = AvgMeter()
         val_mae = AvgMeter()
+        val_miou = AvgMeter()
 
         with torch.no_grad():
             for images, masks, edges in tqdm(self.val_loader):
@@ -169,13 +174,15 @@ class Trainer():
 
                 # Metric
                 mae = torch.mean(torch.abs(outputs - masks))
+                miou = torch.mean(iou(outputs, masks))
 
                 # log
                 val_loss.update(loss.item(), n=images.size(0))
                 val_mae.update(mae.item(), n=images.size(0))
+                val_miou.update(miou.item(), n=images.size(0))
 
-        print(f'Valid Loss:{val_loss.avg:.3f} | MAE:{val_mae.avg:.3f}')
-        return val_loss.avg, val_mae.avg
+        print(f'Valid Loss:{val_loss.avg:.3f} | MAE:{val_mae.avg:.3f} | IoU:{val_miou.avg:.3f}')
+        return val_loss.avg, val_mae.avg, val_miou.avg
 
     def test(self, args, save_path):
         path = os.path.join(save_path, 'best_model.pth')
