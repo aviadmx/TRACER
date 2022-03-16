@@ -12,9 +12,9 @@ from util.utils import get_files_recursive
 
 class DatasetGenerate(Dataset):
     def __init__(self, img_folder, gt_folder, edge_folder, phase: str = 'train', transform=None, seed=None, split=True):
-        self.images = get_files_recursive(img_folder, ext=["jpg", "jpeg", "png", "cr2", "webp", "tiff", 'tif'])
-        self.gts = get_files_recursive(gt_folder, ext=["jpg", "jpeg", "png", "cr2", "webp", "tiff", 'tif'])
-        self.edges = get_files_recursive(edge_folder, ext=["jpg", "jpeg", "png", "cr2", "webp", "tiff", 'tif'])
+        self.images = sorted(get_files_recursive(img_folder, ext=["jpg", "jpeg", "png", "cr2", "webp", "tiff", 'tif']))
+        self.gts = sorted(get_files_recursive(gt_folder, ext=["jpg", "jpeg", "png", "cr2", "webp", "tiff", 'tif']))
+        self.edges = sorted(get_files_recursive(edge_folder, ext=["jpg", "jpeg", "png", "cr2", "webp", "tiff", 'tif']))
         self.transform = transform
 
         assert len(self.images) == len(self.gts) == len(
@@ -40,7 +40,10 @@ class DatasetGenerate(Dataset):
         image = cv2.imread(self.images[idx])
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         mask = cv2.imread(self.gts[idx])
-        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        if 'bgr_2021' in self.gts[0]:
+            mask = np.mean(mask, 2)
+        else:
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
         edge = cv2.imread(self.edges[idx])
         edge = cv2.cvtColor(edge, cv2.COLOR_BGR2GRAY)
 
