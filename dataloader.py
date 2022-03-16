@@ -40,10 +40,7 @@ class DatasetGenerate(Dataset):
         image = cv2.imread(self.images[idx])
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         mask = cv2.imread(self.gts[idx])
-        if 'bgr_2021' in self.gts[0]:
-            mask = np.mean(mask, 2)
-        else:
-            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
         edge = cv2.imread(self.edges[idx])
         edge = cv2.cvtColor(edge, cv2.COLOR_BGR2GRAY)
 
