@@ -64,7 +64,7 @@ class Frequency_Edge_Module(nn.Module):
         x_fft = fftshift(x_fft)
 
         # Mask -> low, high separate
-        mask = self.mask_radial(img=x, r=self.radius).to(next(self.parameters()).device)
+        mask = self.mask_radial(img=x, r=self.radius).to('cuda')
         high_frequency = x_fft * (1 - mask)
         x_fft = ifftshift(high_frequency)
         x_fft = ifft2(x_fft, dim=(-2, -1))
