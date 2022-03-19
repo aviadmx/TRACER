@@ -34,6 +34,7 @@ def getConfig():
     parser.add_argument('--patience', type=int, default=5, help="Scheduler ReduceLROnPlateau's parameter & Early Stopping(+5)")
     parser.add_argument('--model_path', type=str, default='results/')
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--gradient_checkpoint', type=bool, default=False)
     parser.add_argument('--save_map', type=ast.literal_eval, default=None, help='Save prediction map')
 
 

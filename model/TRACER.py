@@ -14,7 +14,8 @@ from modules.att_modules import RFB_Block, aggregation, ObjectAttention
 class TRACER(nn.Module):
     def __init__(self, cfg):
         super().__init__()
-        self.model = EfficientNet.from_pretrained(f'efficientnet-b{cfg.arch}', advprop=True)
+        self.model = EfficientNet.from_pretrained(f'efficientnet-b{cfg.arch}', advprop=True,
+                                                  use_gradient_checkpoint=cfg.gradient_checkpoint)
         self.block_idx, self.channels = get_model_shape()
 
         # Receptive Field Blocks
@@ -35,6 +36,7 @@ class TRACER(nn.Module):
 
         # EfficientNet backbone Encoder
         x = self.model.initial_conv(inputs)
+
         features, edge = self.model.get_blocks(x, H, W)
 
         x3_rfb = self.rfb2(features[1])
