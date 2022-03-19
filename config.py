@@ -8,6 +8,7 @@ def getConfig():
     parser.add_argument('--exp_num', default=0, type=str, help='experiment_number')
     parser.add_argument('--dataset', type=str, action='append', help='appendable list of datasets')
     parser.add_argument('--validation-dataset', type=str ,action='append', help='appendable list of datasets')
+    parser.add_argument('--test-dataset', type=str, action='append', help='appendable list of datasets')
     parser.add_argument('--data_path', type=str, default='data/')
 
     # Model parameter settings

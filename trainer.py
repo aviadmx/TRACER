@@ -26,6 +26,7 @@ class Trainer():
         train_datasets = {}
         for dataset in args.dataset:
             train_datasets[dataset] = (
+                os.path.join(args.data_path, dataset),
                 os.path.join(args.data_path, dataset, 'Train/images/'),
                 os.path.join(args.data_path, dataset, 'Train/masks/'),
                 os.path.join(args.data_path, dataset, 'Train/edges/')
@@ -41,6 +42,7 @@ class Trainer():
             val_datasets = {}
             for dataset in args.validation_dataset:
                 val_datasets[dataset] = (
+                    os.path.join(args.data_path, dataset),
                     os.path.join(args.data_path, dataset, 'Test/images/'),
                     os.path.join(args.data_path, dataset, 'Test/masks/'),
                     os.path.join(args.data_path, dataset, 'Test/edges/')
@@ -118,10 +120,17 @@ class Trainer():
         train_mae = AvgMeter()
         train_miou = AvgMeter()
 
-        for images, masks, edges in tqdm(self.train_loader):
+        for idx, (images, masks, edges) in tqdm(enumerate(self.train_loader), total=len(self.train_loader)):
             images = torch.tensor(images, device=self.device, dtype=torch.float32)
             masks = torch.tensor(masks, device=self.device, dtype=torch.float32)
             edges = torch.tensor(edges, device=self.device, dtype=torch.float32)
+
+            valid_masks = [len(np.unique(m)) > 1 for m in masks.detach().cpu().numpy()]
+            valid_edges = [len(np.unique(m)) > 1 for m in edges.detach().cpu().numpy()]
+            valid_entries = valid_masks and valid_edges
+            images = images[valid_entries]
+            masks = masks[valid_entries]
+            edges = edges[valid_entries]
 
             self.optimizer.zero_grad()
             outputs, edge_mask, ds_map = self.model(images)
@@ -190,7 +199,7 @@ class Trainer():
         print('###### pre-trained Model restored #####')
 
         datasets = {}
-        for dataset in args.dataset:
+        for dataset in args.test_dataset:
             datasets[dataset] = (
                 os.path.join(args.data_path, dataset, 'Test/images/'),
                 os.path.join(args.data_path, dataset, 'Test/masks/')

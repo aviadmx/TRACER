@@ -21,9 +21,13 @@ def edge_generator(dataset_masks):
         _, img_rel_path = img_path.split(dataset_masks)
         if img_rel_path.startswith('/'):
             img_rel_path = img_rel_path[1:]
+        # If we have an alpha channel, take mask from there
+        mask = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+        if len(mask.shape) == 3 and mask.shape[-1] == 4:
+            mask = mask[..., 3]
+        elif len(mask.shape) == 3:
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
 
-        mask = cv2.imread(img_path)
-        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
         mask = np.int64(mask > 128)
 
         [gy, gx] = np.gradient(mask)
@@ -39,6 +43,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset-masks-path', type=str, action='append', help='dataset masks path')
     args = parser.parse_args()
-    for dataset_masks in args.dataset_masks_path:
-        print('Generating edges for dataset', dataset_masks)
-        edge_generator(dataset_masks)
+    print('Generating edges for dataset', args.dataset_masks_path)
+    for dataset in args.dataset_masks_path:
+        print('Generated edges for dataset', dataset)
+        edge_generator(dataset)

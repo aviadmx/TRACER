@@ -1,6 +1,8 @@
 import cv2
 import glob
+import multiprocessing
 import torch
+import os
 import numpy as np
 import albumentations as albu
 from pathlib import Path
@@ -8,17 +10,27 @@ from albumentations.pytorch.transforms import ToTensorV2
 from torch.utils.data import Dataset, DataLoader, ConcatDataset
 from sklearn.model_selection import train_test_split
 from util.utils import get_files_recursive
+import pickle
 
 
 class DatasetGenerate(Dataset):
-    def __init__(self, img_folder, gt_folder, edge_folder, phase: str = 'train', transform=None, seed=None, split=True):
+    def __init__(self, dataset_name, dataset_folder, img_folder, gt_folder, edge_folder, phase: str = 'train',
+                 transform=None, seed=None, split=True):
+        self.dataset_name = dataset_name
+        self.dataset_folder = dataset_folder
         self.images = sorted(get_files_recursive(img_folder, ext=["jpg", "jpeg", "png", "cr2", "webp", "tiff", 'tif']))
         self.gts = sorted(get_files_recursive(gt_folder, ext=["jpg", "jpeg", "png", "cr2", "webp", "tiff", 'tif']))
         self.edges = sorted(get_files_recursive(edge_folder, ext=["jpg", "jpeg", "png", "cr2", "webp", "tiff", 'tif']))
-        self.transform = transform
-
         assert len(self.images) == len(self.gts) == len(
             self.edges), 'Amount of images, GT masks or edge masks is not equal'
+        self.transform = transform
+
+        indices_to_ignore = self._get_noisy_indices(dataset_name, dataset_folder, img_folder)
+        if indices_to_ignore is not None and len(indices_to_ignore) > 0:
+            self.images = sorted([img for idx, img in enumerate(self.images) if idx not in indices_to_ignore])
+            self.gts = sorted([img for idx, img in enumerate(self.gts) if idx not in indices_to_ignore])
+            self.edges = sorted([img for idx, img in enumerate(self.edges) if idx not in indices_to_ignore])
+
         if split:
             train_images, val_images, train_gts, val_gts, train_edges, val_edges = train_test_split(self.images,
                                                                                                     self.gts,
@@ -37,12 +49,9 @@ class DatasetGenerate(Dataset):
                 pass
 
     def __getitem__(self, idx):
-        image = cv2.imread(self.images[idx])
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        mask = cv2.imread(self.gts[idx])
-        mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-        edge = cv2.imread(self.edges[idx])
-        edge = cv2.cvtColor(edge, cv2.COLOR_BGR2GRAY)
+        image = self._load_image(idx)
+        mask = self._load_mask(idx)
+        edge = self._load_edge(idx)
 
         if self.transform is not None:
             augmented = self.transform(image=image, masks=[mask, edge])
@@ -57,9 +66,63 @@ class DatasetGenerate(Dataset):
     def __len__(self):
         return len(self.images)
 
+    def _load_image(self, idx):
+        image = cv2.imread(self.images[idx])
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        return image
+
+    def _load_mask(self, idx):
+        mask = cv2.imread(self.gts[idx], cv2.IMREAD_UNCHANGED)
+        # If we have an alpha channel, take mask from there
+        if len(mask.shape) == 3 and mask.shape[-1] == 4:
+            mask = mask[..., 3]
+        elif len(mask.shape) == 3:
+            mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+        return mask
+
+    def _load_edge(self, idx):
+        edge = cv2.imread(self.edges[idx], cv2.IMREAD_UNCHANGED)
+        if len(edge.shape) == 3:
+            edge = cv2.cvtColor(edge, cv2.COLOR_BGR2GRAY)
+        return edge
+
+    def _get_noisy_indices(self, dataset_name, dataset_folder, img_folder):
+        print(f'Filtering dataset {dataset_name}')
+        cache_path = os.path.join(dataset_folder, f'{dataset_name}_noisy_images.p')
+        if os.path.exists(cache_path):
+            with open(cache_path, 'rb') as f:
+                noisy_images = pickle.load(f)
+        else:
+            noisy_images = []
+            pool = multiprocessing.Pool()
+            noisy_entries = pool.map(self._is_noisy, range(len(self.images)))
+            for idx, is_noisy in enumerate(noisy_entries):
+                if not is_noisy:
+                    continue
+                image_path = self.images[idx]
+                image_relative_path = image_path.split(img_folder)[1]
+                if image_relative_path.startswith('/'):
+                    image_relative_path = image_relative_path[1:]
+                noisy_images.append(image_relative_path)
+            with open(cache_path, 'wb') as f:
+                pickle.dump(noisy_images, f)
+        full_path_noisy_images = [os.path.join(img_folder, img_path) for img_path in noisy_images]
+        noisy_indices = [idx for idx, img in enumerate(self.images) if img in full_path_noisy_images]
+        print(f'Found {len(noisy_indices)} noisy data entries')
+        return noisy_indices
+
+    def _is_noisy(self, image_idx):
+        image = self._load_image(image_idx)
+        mask = self._load_mask(image_idx)
+        edge = self._load_edge(image_idx)
+        if len(np.unique(image)) <= 1 or len(np.unique(mask)) <= 1 or len(np.unique(edge)) <= 1:
+            return True
+        return False
+
 
 class Test_DatasetGenerate(Dataset):
-    def __init__(self, img_folder, gt_folder, transform=None):
+    def __init__(self, dataset_name, img_folder, gt_folder, transform=None):
+        self.dataset_name = dataset_name
         self.images = sorted(glob.glob(img_folder + '/*'))
         self.gts = sorted(glob.glob(gt_folder + '/*'))
         self.transform = transform
@@ -84,8 +147,8 @@ def get_loader(datasets, phase: str, batch_size, shuffle,
                num_workers, transform, seed=None, split=True):
     if phase == 'test':
         dataset_list = []
-        for _, (img_folder, gt_folder) in datasets.iterrows():
-            dataset_list.append(Test_DatasetGenerate(img_folder, gt_folder, transform))
+        for dataset_name, (img_folder, gt_folder) in datasets.iterrows():
+            dataset_list.append(Test_DatasetGenerate(dataset_name, img_folder, gt_folder, transform))
             if len(datasets) > 1:
                 dataset = ConcatDataset(dataset_list)
             else:
@@ -93,8 +156,10 @@ def get_loader(datasets, phase: str, batch_size, shuffle,
         data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
     else:
         dataset_list = []
-        for _, (img_folder, gt_folder, edge_folder) in datasets.items():
-            dataset_list.append(DatasetGenerate(img_folder, gt_folder, edge_folder, phase, transform, seed, split))
+        for dataset_name, (dataset_folder, img_folder, gt_folder, edge_folder) in datasets.items():
+            dataset = DatasetGenerate(dataset_name, dataset_folder, img_folder, gt_folder, edge_folder, phase,
+                                      transform, seed, split)
+            dataset_list.append(dataset)
         if len(datasets) > 1:
             dataset = ConcatDataset(dataset_list)
         else:

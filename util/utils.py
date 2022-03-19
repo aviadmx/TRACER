@@ -1,6 +1,7 @@
 import torch
 import os
 
+
 def to_array(feature_map):
     if feature_map.shape[0] == 1:
         feature_map = feature_map.squeeze(0).permute(1, 2, 0).detach().cpu().numpy()
