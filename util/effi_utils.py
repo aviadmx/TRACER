@@ -69,7 +69,7 @@ def get_model_shape():
 GlobalParams = collections.namedtuple('GlobalParams', [
     'width_coefficient', 'depth_coefficient', 'image_size', 'dropout_rate',
     'num_classes', 'batch_norm_momentum', 'batch_norm_epsilon',
-    'drop_connect_rate', 'depth_divisor', 'min_depth', 'include_top', 'use_gradient_checkpoint'])
+    'drop_connect_rate', 'depth_divisor', 'min_depth', 'include_top', 'gradient_checkpoint'])
 
 # Parameters for an individual model block
 BlockArgs = collections.namedtuple('BlockArgs', [
@@ -548,7 +548,7 @@ def efficientnet(width_coefficient=None, depth_coefficient=None, image_size=None
         depth_divisor=8,
         min_depth=None,
         include_top=include_top,
-        use_gradient_checkpoint=False
+        gradient_checkpoint=False
     )
 
     return blocks_args, global_params

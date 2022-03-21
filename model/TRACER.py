@@ -15,7 +15,7 @@ class TRACER(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.model = EfficientNet.from_pretrained(f'efficientnet-b{cfg.arch}', advprop=True,
-                                                  use_gradient_checkpoint=cfg.gradient_checkpoint)
+                                                  gradient_checkpoint=cfg.gradient_checkpoint)
         self.block_idx, self.channels = get_model_shape()
 
         # Receptive Field Blocks

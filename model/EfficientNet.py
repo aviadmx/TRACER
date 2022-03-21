@@ -56,8 +56,8 @@ class MBConvBlock(nn.Module):
         super().__init__()
         self._block_args = block_args
         self._bn_mom = 1 - global_params.batch_norm_momentum  # pytorch's difference from tensorflow
-        self.use_gradient_checkpoint = global_params.use_gradient_checkpoint
-        if self.use_gradient_checkpoint:
+        self.gradient_checkpoint = global_params.gradient_checkpoint
+        if self.gradient_checkpoint:
             self._bn_mom = self._bn_mom ** 0.5
         self._bn_eps = global_params.batch_norm_epsilon
         self.has_se = (self._block_args.se_ratio is not None) and (0 < self._block_args.se_ratio <= 1)
@@ -154,7 +154,7 @@ class EfficientNet(nn.Module):
         assert isinstance(blocks_args, list), 'blocks_args should be a list'
         assert len(blocks_args) > 0, 'block args must be greater than 0'
         self._global_params = global_params
-        self._use_gradient_checkpoint = global_params.use_gradient_checkpoint
+        self._gradient_checkpoint = global_params.gradient_checkpoint
         self._blocks_args = blocks_args
         self.block_idx, self.channels = get_model_shape()
         self.Frequency_Edge_Module1 = Frequency_Edge_Module(radius=cfg.frequency_radius,
@@ -243,7 +243,7 @@ class EfficientNet(nn.Module):
             if drop_connect_rate:
                 drop_connect_rate *= float(idx) / len(self._blocks)  # scale drop connect_rate
 
-            if self._use_gradient_checkpoint:
+            if self._gradient_checkpoint:
                 x = checkpoint(block, x, drop_connect_rate)
             else:
                 x = block(x, drop_connect_rate=drop_connect_rate)
